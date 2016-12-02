@@ -111,8 +111,6 @@ class Stat(object):
         return self._sqrt/self._ctr
 
     def __add__(self, other):
-        if isinstance(other, Stat) and not isinstance(self, Stat):
-            self, other = other, self
 
         if other is None:
             return copy.copy(self)
@@ -130,6 +128,9 @@ class Stat(object):
             ret._ctr = self._ctr + other._ctr
             ret._main = self._main
             return ret
+
+    def __radd__(self, other):
+        return self + other
 
     def __float__(self):
         if self._main == "sum":
@@ -217,7 +218,7 @@ class Node(object):
         else:
             r = 0
         for child in self.children:
-            r += child.sum(what, include_self=True, raise_keyerror=raise_keyerror)
+            r = r + child.sum(what, include_self=True, raise_keyerror=raise_keyerror)
         return r
 
     def __getattr__(self, what):
@@ -332,7 +333,10 @@ class BKZTreeTrace(Trace):
             node.data["%"] = Stat(kwds["probability"], main="avg") + node.data.get("%", None)
 
         if self.verbose and self.verbose >= self.current.level():
-            print(self.current)
+            c = self.current
+            print(self.current.label, "::", pretty_dict(OrderedDict((("cputime", c.data["cputime"]),
+                                                                     ("walltime", c.data["walltime"]),
+                                                                     ("#enum", c.sum("#enum"))))))
 
         self.current = self.current.parent
 
