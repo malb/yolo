@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+"""
+Collecting traces of BKZ-like computations
+
+.. moduleauthor:: Martin R. Albrecht <fplll-devel@googlegroups.com>
+
+"""
 from __future__ import print_function
 from __future__ import unicode_literals
 from __future__ import absolute_import
@@ -17,61 +23,62 @@ from fpylll.util import gaussian_heuristic
 
 
 def pretty_dict(d, keyword_width=None, round_bound=4096):
-    """Return 'pretty' string describing the dictionary ``d``.
+    """Return 'pretty' string representation of the dictionary ``d``.
 
-    :param d:
-    :param keyword_width:
-    :param round_bound:
+    :param d: a dictionary
+    :param keyword_width: width allocated for keywords
+    :param round_bound: values beyond this bound are shown as `2^x`
 
     """
-    if d is None:
-        return
     s = []
     for k in d:
+
         v = d[k]
+
         if keyword_width:
             fmt = u"\"%%%ds\"" % keyword_width
             k = fmt % k
         else:
             k = "\"%s\""%k
-        try:
-            v = float(v)
-            if v < round_bound or v == 0:
-                if v < 2.0 and v >= 0.0:
-                    s.append(u"%s: %9.7f"%(k, v))
-                else:
-                    s.append(u"%s: %9.4f"%(k, v))
+
+        if isinstance(v, (int, long)):
+            if v > round_bound:
+                s.append(u"%s: %9s" %(k,  u"2^%.1f" % log(v, 2)))
             else:
-                t = u"2^%.1f" % log(v, 2)
-                s.append(u"%s: %9s" %(k, t))
-        except TypeError:
-            s.append(u"%s: %s"%(k, v))
+                s.append(u"%s: %9d"%(k, v))
+            continue
+        elif not isinstance(v, float):
+            try:
+                v = float(v)
+            except TypeError:
+                s.append(u"%s: %s"%(k, v))
+                continue
+
+        if v < 2.0 and v >= 0.0:
+            s.append(u"%s: %9.7f"%(k, v))
+        elif v < round_bound:
+            s.append(u"%s: %9.4f"%(k, v))
+        else:
+            s.append(u"%s: %9s" %(k,  u"2^%.1f" % log(v, 2)))
+
     return u"{" + u",  ".join(s) + u"}"
 
 
-class TraceContext(object):
-    def __init__(self, trace, *args, **kwds):
-        """Create a new context for gathering statistics.
+class Stat(object):
+    """
+    A ``stat`` collects information about some random variable (such as running time) such as
+    minima, maxima, mean and 2nd momentum.
+    """
 
-        :param trace:
-        :param what:
-        :returns:
-        :rtype:
+    def __init__(self, value=None, main="sum"):
+        """
+        Create a new instance, optionally providing an initial ``value``.
+
+        :param value: some initial value
+        :param main: represent this object by either its sum or its mean when converting to float etc.
 
         """
-        self.trace = trace
-        self.what = args if len(args)>1 else args[0]
-        self.kwds = kwds
 
-    def __enter__(self):
-        self.trace.enter(self.what, **self.kwds)
-
-    def __exit__(self, exception_type, exception_value, exception_traceback):
-        self.trace.exit(self.what, **self.kwds)
-
-
-class Stat(object):
-    def __init__(self, value=None, main="sum"):
         if value is not None:
             self._min = value
             self._max = value
@@ -83,6 +90,11 @@ class Stat(object):
         self._main = main
 
     def add(self, value):
+        """
+        Add value to this statistic.
+
+        :param value: some value
+        """
         self._min = min(self._min, value)
         self._max = max(self._max, value)
         self._sum += value
@@ -111,7 +123,13 @@ class Stat(object):
         return self._sqrt/self._ctr
 
     def __add__(self, other):
+        """
+        Addition semantics are:
 
+        - ``stat + None`` returns ``stat``
+        - ``stat + stat`` returns the sum of their underlying values
+        - ``stat + value`` inserts ``value`` into ``stat``
+        """
         if other is None:
             return copy.copy(self)
         elif not isinstance(other, Stat):
@@ -130,9 +148,15 @@ class Stat(object):
             return ret
 
     def __radd__(self, other):
+        """
+        Revert to normal addition.
+        """
         return self + other
 
     def __float__(self):
+        """
+        Reduce this stats object down a float depending on strategy chosen in constructor.
+        """
         if self._main == "sum":
             return float(self.sum)
         elif self._main == "avg":
@@ -141,12 +165,75 @@ class Stat(object):
             raise NotImplementedError
 
     def __str__(self):
+        """
+        String representation of this stat object.
+        """
         if self._main == "sum":
             return str(self.sum)
         elif self._main == "avg":
             return str(self.avg)
         else:
             raise NotImplementedError
+
+
+class TraceContext(object):
+    """
+    A trace context collects data on entry and exit about the underlying process.
+    """
+    def __init__(self, trace, *args, **kwds):
+        """Create a new context for gathering statistics.
+
+        :param trace: a trace object
+        :param args: all args form a label for the trace context
+        :param kwds: all kwds are considered auxiliary data
+
+        """
+        self.trace = trace
+        self.what = args if len(args)>1 else args[0]
+        self.kwds = kwds
+
+    def __enter__(self):
+        """
+        Call ``enter`` on trace object
+        """
+        self.trace.enter(self.what, **self.kwds)
+
+    def __exit__(self, exception_type, exception_value, exception_traceback):
+        """
+        Call ``exit`` on trace object
+        """
+        self.trace.exit(self.what, **self.kwds)
+
+
+class Trace(object):
+    """
+    A trace object which does nothing.
+    """
+    def __init__(self, instance, verbose=False):
+        """
+        Create a new trace instance.
+
+        :param instance: BKZ-like object instance
+        :param verbose: print information, integers ≥ 0 are also accepted
+
+        """
+        self.instance = instance
+        self.verbose = int(verbose)
+
+    def context(self, *args, **kwds):
+        """
+        Return ``TraceCotext``
+        """
+        return TraceContext(self, *args, **kwds)
+
+    def enter(self, label, **kwds):
+        pass
+
+    def exit(self, label, **kwds):
+        pass
+
+
+dummy_trace = Trace(None)
 
 
 class Node(object):
@@ -169,7 +256,7 @@ class Node(object):
         self.children = []
 
     def add_child(self, child):
-        """Add a child
+        """Add a child.
 
         :param child: a node
         :returns: the child
@@ -189,83 +276,95 @@ class Node(object):
         for child in self.children:
             if child.label == label:
                 return child
+
         return self.add_child(Node(label))
 
     def __str__(self):
+        """
+
+        """
         return u"{\"%s\": %s}"%(self.label, pretty_dict(self.data))
 
     __repr__ = __str__
 
-    def report(self, indentation=0, max_depth=None):
-        s = []
-        s.append(" "*indentation + str(self))
-        if max_depth is None or self.level() < max_depth:
-            for child in self.children:
-                s.append(child.report(indentation+2, max_depth=max_depth))
-        return "\n".join(s)
+    def report(self, indentation=0, depth=None):
+        """
+        Return detailed string representation of thisbtree.
 
-    def sum(self, what, include_self=True, raise_keyerror=False):
-        """Sum over all data times with name ``what`` in any child node of this node."
-
-        :param what: a string
+        :param indentation: add spaces to the left of the string representation
+        :param depth: stop at this depth
 
         """
-        if include_self:
+        s = [" "*indentation + str(self)]
+        if depth is None or depth > 0:
+            for child in self.children:
+                depth = None if depth is None else depth-1
+                s.append(child.report(indentation+2, depth=depth))
+        return "\n".join(s)
+
+    def sum(self, tag, include_self=True, raise_keyerror=False, label=None):
+        """
+        Return sum over all items tagged ``tag`` in associated data within this tree.
+
+        :param tag: a string
+        :param include_self: include data in this node
+        :param raise_keyerror: if a node does not have an item tagged with ``tag`` raise a
+            ``KeyError``
+        :param label: filter by ``label``
+        """
+        if include_self and (label is None or self.label == label):
             if raise_keyerror:
-                r = self.data[what]
+                r = self.data[tag]
             else:
-                r = self.data.get(what, 0)
+                r = self.data.get(tag, 0)
         else:
             r = 0
         for child in self.children:
-            r = r + child.sum(what, include_self=True, raise_keyerror=raise_keyerror)
+            r = r + child.sum(tag, include_self=True, raise_keyerror=raise_keyerror, label=label)
         return r
 
-    def __getattr__(self, what):
-        """Return first child node with label ``what``
+    def __getattr__(self, label):
+        """Return first child node with label ``label``
 
-        :param what:
-        :returns:
-        :rtype:
+        :param label: label
 
         """
         r = []
         for child in self.children:
-            if child.label == what:
+            if child.label == label:
                 return child
-            if isinstance(child.label, tuple) and child.label[0] == what:
+            if isinstance(child.label, tuple) and child.label[0] == label:
                 r.append(child)
         if r:
             return tuple(r)
         else:
-            raise AttributeError("'Node' object has no attribute '%s'"%(what))
+            raise AttributeError("'Node' object has no attribute '%s'"%(label))
 
+    def __getitem__(self, tag):
+        """Return associated data tagged ``tag```
+
+        :param tag:
+
+        """
+        return self.data[tag]
+
+    @property
     def level(self):
-        if self.parent is None:
-            return 0
-        else:
-            return 1 + self.parent.level()
-
-
-class Trace(object):
-    def __init__(self, instance, verbose=False):
-        self.instance = instance
-        self.verbose = int(verbose)
-
-    def context(self, *args, **kwds):
-        return TraceContext(self, *args, **kwds)
-
-    def enter(self, what, **kwds):
-        pass
-
-    def exit(self, what, **kwds):
-        pass
-
-
-dummy_trace = Trace(None)
+        """
+        Return level of this node, i.e. how many steps it takes to reach a node with parent
+        ``None``.
+        """
+        node, level = self, 0
+        while node.parent is not None:
+            level += 1
+            node = node.parent
+        return level
 
 
 class TimeTreeTrace(Trace):
+    """
+    Collect CPU and wall time for every context visited, creating a tree structure along the way.
+    """
 
     entries = (("cputime", time.clock), ("walltime", time.time))
 
@@ -274,76 +373,78 @@ class TimeTreeTrace(Trace):
         self.d = Node("root")
         self.current = self.d
 
-    def enter(self, what, **kwds):
-        """Documentation
-
-        :param what:
-        :returns:
-        :rtype:
-
+    def enter(self, label, **kwds):
         """
-        node = self.current.child(what)
+        Enter context, start tracking time.
+
+        :param label: if a child with given label already exits, it is modified, otherwise a new
+            label is created.
+        """
+        node = self.current.child(label)
 
         for t, f in TimeTreeTrace.entries:
             node.data[t] = node.data.get(t, 0) - f()
 
         self.current = node
 
-    def exit(self, what, **kwds):
+    def exit(self, label, **kwds):
+        """
+        Leave context, record time spent.
+
+        :param label: if a child with given label already exits, it is modified, otherwise a new
+            label is created.
+
+        .. note :: If verbosity ≥ to the current level, also print the current node.
+
+        """
         node = self.current
 
         for t, f in TimeTreeTrace.entries:
             node.data[t] = node.data.get(t, 0) + f()
 
-        if self.verbose and self.verbose >= self.current.level():
+        if self.verbose and self.verbose >= self.current.level:
             print(self.current)
 
         self.current = self.current.parent
 
 
 class BKZTreeTrace(Trace):
-
     def __init__(self, instance, verbose=False):
         Trace.__init__(self, instance, verbose)
         self.d = Node("root")
         self.current = self.d
 
-    def enter(self, what, **kwds):
-        """Documentation
-
-        :param what:
-        :returns:
-        :rtype:
-
-        """
-        node = self.current.child(what)
+    def enter(self, label, **kwds):
+        node = self.current.child(label)
         node.data["cputime"] = node.data.get("cputime", 0) - time.clock()
         node.data["walltime"] = node.data.get("walltime", 0) - time.time()
         self.current = node
 
-    def exit(self, what, **kwds):
+    def exit(self, label, **kwds):
         node = self.current
         node.data["cputime"]  += time.clock()
         node.data["walltime"] += time.time()
         node.data["r_0"] = self.instance.M.get_r(0, 0)
         node.data["/"] = self.instance.M.get_current_slope(0, self.instance.A.nrows)
 
-        if what == "enumeration":
+        if label == "enumeration":
             node.data["#enum"] = Stat(kwds["enum_obj"].get_nodes(), main="sum") + node.data.get("#enum", None)
             node.data["%"] = Stat(kwds["probability"], main="avg") + node.data.get("%", None)
 
-        if self.verbose and self.verbose >= self.current.level():
-            c = self.current
-            print(self.current.label, "::", pretty_dict(OrderedDict((("cputime", c.data["cputime"]),
-                                                                     ("walltime", c.data["walltime"]),
-                                                                     ("#enum", c.sum("#enum"))))))
+        if self.verbose and label[0] == "tour":
+            i = label[1]
+            print(pretty_dict(OrderedDict((("i", i),
+                                           ("cputime", node["cputime"]),
+                                           ("walltime", node["walltime"]),
+                                           ("preproc", node.svp.preprocessing["cputime"]),
+                                           ("svp", node.svp.enumeration["cputime"]),
+                                           ("lll", node.svp.sum("cputime", label="lll")),
+                                           ("postproc", node.svp.postprocessing["cputime"]),
+                                           ("r_0", node["r_0"]),
+                                           ("/", node["/"]),
+                                           ("#enum", node.sum("#enum"))))))
 
         self.current = self.current.parent
-
-
-"""
-BKZ Reduction for testing
-"""
 
 
 class BKZReduction:
@@ -570,10 +671,8 @@ class BKZReduction:
             self.M.remove_last_row()
 
 
-n = 90
-A = IntegerMatrix.random(n, "qary", k=n//2, bits=30)
-param = BKZ.Param(block_size=60, max_loops=6, strategies=BKZ.DEFAULT_STRATEGY, flags=BKZ.MAX_LOOPS|BKZ.VERBOSE)
+n = 100
+A = IntegerMatrix.random(n, "qary", k=n//2, bits=40)
+param = BKZ.Param(block_size=64, max_loops=6, strategies=BKZ.DEFAULT_STRATEGY, flags=BKZ.MAX_LOOPS|BKZ.VERBOSE)
 trace = BKZReduction(A)(param)
 print(trace.d.report())
-print(trace.d.sum("walltime"))
-print(trace.d.tour[1].sum("walltime"))
