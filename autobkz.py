@@ -10,7 +10,7 @@ from time import time
 from random import randint
 
 
-AUTO_MIN_BLOCK_SIZE = 30
+AUTO_MIN_BLOCK_SIZE = 40
 AUTO_MAX_BLOCK_SIZE = 200
 AUTO_OVERRIDE_RATIO = .2
 
@@ -47,6 +47,9 @@ class AutoPreprocDecider():
         best_efficiency = 0.
         best_i = 0  # block_size/2 - 10
 
+        if block_size < 40:
+            return 0
+
         # Find the best efficiency so far
         for i in range(AUTO_MIN_PREPROC_BLOCK_SIZE, block_size - AUTO_GAP_PREPROC_BLOCK_SIZE):
             if V[i] > best_efficiency:
@@ -64,7 +67,7 @@ class AutoPreprocDecider():
             if best_i > 2:
                 best_i += randint(0, 4) - 2
             else:
-                if randint(0,20) == 0:
+                if randint(0, 20) == 0:
                     best_i += randint(0, 2)   
 
         return best_i
@@ -105,7 +108,7 @@ class BKZReduction(BKZBase):
 
         if block_size < AUTO_MIN_BLOCK_SIZE:
             strategy = param.strategies[block_size]
-            return radius, strategy.get_pruning(radius  * 2, gh_radius * 2**ge)
+            return radius, strategy.get_pruning(radius, gh_radius * 2**ge)
         else:
             with stats.context("pruner"):
                 R = [self.M.get_r(i, i) for i in range(kappa, kappa+block_size)]

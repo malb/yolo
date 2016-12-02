@@ -14,7 +14,7 @@ from fpylll import BKZ as fplll_bkz
 
 
 n = 80
-block_sizes = range(30, 80)
+block_sizes = range(40, 80)
 
 
 def make_integer_matrix(n):
@@ -37,6 +37,10 @@ def compare():
         print "autoBKZ"
         print 
         decider = AutoPreprocDecider()
+        B = copy(A)
+        aBKZ(B, decider)(params=params)
+        decider.report(bs)
+
         B = copy(A)
         aBKZ(B, decider)(params=params)
         decider.report(bs)
