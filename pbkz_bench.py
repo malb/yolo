@@ -21,6 +21,7 @@ def run_timing_test(n, block_size=60, bits=30, ncores=8, min_success_probability
     t = time.time()
     bkz(param)
     t = time.time() - t
+    trace_p = bkz.trace
     print "Parallel(%d): %.2fs"%(ncores, t)
 
     random.seed(1)
@@ -29,6 +30,15 @@ def run_timing_test(n, block_size=60, bits=30, ncores=8, min_success_probability
                       max_loops=max_loops,
                       flags=BKZ.VERBOSE|BKZ.MAX_LOOPS)
     t = time.time()
-    BKZ2(copy(A))(param)
+    bkz = BKZ2(copy(A))
+    bkz(param)
+    trace_s = bkz.trace
+
     t = time.time() - t
     print "  Sequential: %.2fs"%(t,)
+    return trace_p, trace_s
+
+
+tp, ts = run_timing_test(80, block_size=60, max_loops=4, ncores=2)
+print(tp.report())
+print(ts.report())
