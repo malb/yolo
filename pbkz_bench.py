@@ -39,6 +39,6 @@ def run_timing_test(n, block_size=60, bits=30, ncores=8, min_success_probability
     return trace_p, trace_s
 
 
-tp, ts = run_timing_test(80, block_size=60, max_loops=4, ncores=2)
-print(tp.report())
-print(ts.report())
+# tp, ts = run_timing_test(80, block_size=60, max_loops=4, ncores=2)
+# print(tp.report())
+# print(ts.report())
