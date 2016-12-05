@@ -7,24 +7,24 @@ from copy import copy
 
 from fpylll import IntegerMatrix
 from fpylll.algorithms.bkz2 import BKZReduction as BKZ2
-from autobkz import BKZReduction as aBKZ
-from autobkz import AutoPreprocDecider
+from yolobkz import YoloBKZ
 from fpylll.util import set_random_seed
 from fpylll import BKZ as fplll_bkz
 
 
-n = 80
-block_sizes = range(40, 80)
+n = 140
+block_sizes = range(10, 80)
+tours = 8
 
 
 def make_integer_matrix(n):
-    A = IntegerMatrix.random(n, "ntrulike", bits=30)
+    A = IntegerMatrix.random(n, "qary", k=n//2, bits=30)
     return A
 
 
 def compare():
     for bs in block_sizes:
-        params = fplll_bkz.Param(block_size=bs, max_loops=8, 
+        params = fplll_bkz.Param(block_size=bs, max_loops=tours, 
                                  flags=fplll_bkz.VERBOSE|fplll_bkz.GH_BND, strategies="default.json")
         A = make_integer_matrix(n)
         
@@ -32,25 +32,18 @@ def compare():
         print "======"
         print "BLOCKSIZE ", bs
         print "======"
-
-        print 
-        print "autoBKZ"
-        print 
-        decider = AutoPreprocDecider()
-        B = copy(A)
-        aBKZ(B, decider)(params=params)
-        decider.report(bs)
-
-        B = copy(A)
-        aBKZ(B, decider)(params=params)
-        decider.report(bs)
-
         print 
         print "Good old BKZ2.0"
-        print 
 
         B = copy(A)
         BKZ2(B)(params=params)
+
+        print 
+        print "yoloBKZ"
+        print 
+
+        B = copy(A)
+        YoloBKZ(B)(b=bs, tours=tours)
 
 
 compare()
