@@ -266,16 +266,16 @@ class YoloBKZ(object):
         solutions = []
         try:
             if self.recycle:
-                enum_obj = Enumeration(self.M, b/2, always_update_radius=True)
+                enum_obj = Enumeration(self.M, b/2)
             else:
-                enum_obj = Enumeration(self.M, 1, always_update_radius=True)
+                enum_obj = Enumeration(self.M, 1)
             if pruning is None:
                 with self.tracer.context("enumeration", enum_obj=enum_obj, probability=1.):
-                    enum_obj.enumerate(k, k + b, radius, 0, aux_sols=solutions)
+                    solutions = enum_obj.enumerate(k, k + b, radius, 0)
             else:
                 with self.tracer.context("enumeration", enum_obj=enum_obj, probability=pruning.probability):
-                    enum_obj.enumerate(k, k + b, radius, 0, pruning=pruning.coefficients, aux_sols=solutions)
-            return solutions[0][0], [sol for (sol, _) in solutions[1:]]
+                    solutions = enum_obj.enumerate(k, k + b, radius, 0, pruning=pruning.coefficients)
+            return [sol for (sol, _) in solutions[0:]]
         except EnumerationError:
             return None, []
 
@@ -298,7 +298,12 @@ class YoloBKZ(object):
 
             with self.tracer.context("pruner"):
                 radius, pruning = self.tuners[b].enum(M, k, tmp_target_prob, timer.elapsed())
-            solution, hints = self.enum(k, b, radius, pruning)
+            solutions = self.enum(k, b, radius, pruning)
+            solution = solutions[0]
+            if solution == None:
+                hints = []
+            else:
+                hints = solutions[1:]
 
             if pruning is None:
                 rem_prob = 0
