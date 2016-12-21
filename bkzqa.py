@@ -99,7 +99,8 @@ class BKZReduction(BKZ2):
 
         with tracer.context("lll"):
             # run LLL between kappa and kappa + block_size
-            self.lll_obj(kappa, kappa, kappa + block_size, kappa)
+            lll_obj = LLL.Reduction(self.M, eta=0.75)
+            lll_obj(kappa, kappa, kappa + block_size, kappa)
 
         for preproc in param.strategies[block_size].preprocessing_block_sizes:
             prepar = param.__class__(block_size=preproc, strategies=param.strategies,
@@ -191,7 +192,8 @@ class BKZReduction(BKZ2):
 
             self.M.move_row(d, kappa)
             with tracer.context("lll"):
-                self.lll_obj(kappa, kappa, kappa + block_size + 1)
+                lll_obj = LLL.Reduction(self.M, eta=0.75)
+                lll_obj(kappa, kappa, kappa + block_size + 1)
             self.M.move_row(kappa + block_size, d)
             self.M.remove_last_row()
 
