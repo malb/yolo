@@ -139,7 +139,7 @@ class BKZReduction(BKZ2):
                 enum_obj = Enumeration(self.M)
                 with tracer.context("enumeration",
                                     enum_obj=enum_obj,
-                                    probability=pruning.probability,
+                                    probability=pruning.expectation,
                                     full=block_size==param.block_size):
                     solution, max_dist = enum_obj.enumerate(kappa, kappa + block_size, radius, expo,
                                                             pruning=pruning.coefficients)[0]
@@ -156,7 +156,7 @@ class BKZReduction(BKZ2):
                         self.delete_copy_block(kappa, block_size, restore=True)
                 rerandomize = True
 
-            remaining_probability *= (1 - pruning.probability)
+            remaining_probability *= (1 - pruning.expectation)
 
     def svp_postprocessing(self, kappa, block_size, solution, tracer, top_level):
         """Insert SVP solution into basis and LLL reduce.
