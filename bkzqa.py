@@ -172,16 +172,31 @@ class BKZReduction(BKZ2):
 
         nonzero_vectors = len([x for x in solution if x])
 
-        if nonzero_vectors == 1:
-            first_nonzero_vector = None
-            for i in range(block_size):
-                if abs(solution[i]) == 1:
-                    first_nonzero_vector = i
-                    break
+        first_nonzero_vector = None
+        for i in range(block_size)[::-1]:
+            if abs(solution[i]) == 1:
+                first_nonzero_vector = i
+                break
 
+        if nonzero_vectors == 1:
             self.M.move_row(kappa + first_nonzero_vector, kappa)
             with tracer.context("lll"):
-                self.lll_obj.size_reduction(kappa, kappa + first_nonzero_vector + 1)
+                self.lll_obj(0, kappa, kappa+ 1, 0)
+
+        elif first_nonzero_vector:
+            # one coordinate is equal to ±1, linear dependency easy to fix
+            d = self.M.d
+            self.M.create_row()
+
+            with self.M.row_ops(d, d + 1):
+                for i in range(block_size):
+                    self.M.row_addmul(d, kappa + i, solution[i])
+
+            self.M.move_row(d, kappa)
+            self.M.move_row(kappa + first_nonzero_vector + 1, d)
+            self.M.remove_last_row()
+            with tracer.context("lll"):
+                self.lll_obj(0, kappa, kappa + 1, 0)
         else:
             d = self.M.d
             self.M.create_row()
@@ -192,8 +207,7 @@ class BKZReduction(BKZ2):
 
             self.M.move_row(d, kappa)
             with tracer.context("lll"):
-                lll_obj = LLL.Reduction(self.M, eta=0.75)
-                lll_obj(kappa, kappa, kappa + block_size + 1)
+                self.lll_obj(0, kappa, kappa + block_size + 1, 0)
             self.M.move_row(kappa + block_size, d)
             self.M.remove_last_row()
 
