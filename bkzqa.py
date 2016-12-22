@@ -6,8 +6,9 @@ BKZ 2.0 variant which ensures that the basis quality does not decrease.
 from fpylll.algorithms.bkz_stats import BKZTreeTracer, dummy_tracer
 import time
 import copy
+from fpylll.algorithms.bkz  import BKZReduction as BKZ1
 from fpylll.algorithms.bkz2 import BKZReduction as BKZ2
-from fpylll import BKZ, IntegerMatrix, Enumeration, EnumerationError, LLL
+from fpylll import BKZ, IntegerMatrix, Enumeration, EnumerationError, LLL, GSO
 from fpylll.util import gaussian_heuristic, set_random_seed
 
 
@@ -55,7 +56,7 @@ class BKZReduction(BKZ2):
         :param max_row: stop processing in this row (exclusive)
 
         """
-        tracer = BKZTreeTracer(self, verbosity=params.flags & BKZ.VERBOSE)
+        tracer = BKZTreeTracer(self, verbosity=params.flags & BKZ.VERBOSE, start_clocks=True)
 
         auto_abort = BKZ.AutoAbort(self.M, self.A.nrows)
         cputime_start = time.clock()
@@ -77,6 +78,7 @@ class BKZReduction(BKZ2):
             if (params.flags & BKZ.MAX_TIME) and time.clock() - cputime_start >= params.max_time:
                 break
 
+        tracer.exit()
         self.trace = tracer.trace
 
     def tour(self, params, min_row=0, max_row=-1, tracer=dummy_tracer, top_level=False):
@@ -171,6 +173,7 @@ class BKZReduction(BKZ2):
             return
 
         nonzero_vectors = len([x for x in solution if x])
+        lll_min = 0 if top_level else kappa
 
         first_nonzero_vector = None
         for i in range(block_size)[::-1]:
@@ -181,7 +184,7 @@ class BKZReduction(BKZ2):
         if nonzero_vectors == 1:
             self.M.move_row(kappa + first_nonzero_vector, kappa)
             with tracer.context("lll"):
-                self.lll_obj(0, kappa, kappa+ 1, 0)
+                self.lll_obj(lll_min, kappa, kappa+ 1, lll_min)
 
         elif first_nonzero_vector:
             # one coordinate is equal to ±1, linear dependency easy to fix
@@ -196,7 +199,8 @@ class BKZReduction(BKZ2):
             self.M.move_row(kappa + first_nonzero_vector + 1, d)
             self.M.remove_last_row()
             with tracer.context("lll"):
-                self.lll_obj(0, kappa, kappa + 1, 0)
+                self.lll_obj(lll_min, kappa, kappa + 1, lll_min)
+
         else:
             d = self.M.d
             self.M.create_row()
@@ -207,23 +211,28 @@ class BKZReduction(BKZ2):
 
             self.M.move_row(d, kappa)
             with tracer.context("lll"):
-                self.lll_obj(0, kappa, kappa + block_size + 1, 0)
+                self.lll_obj(lll_min, kappa, kappa + block_size + 1, lll_min)
             self.M.move_row(kappa + block_size, d)
             self.M.remove_last_row()
+
+        self.M.update_gso()
 
 
 set_random_seed(1337)
 n = 120
 block_size = 60
-A = IntegerMatrix.random(n, "qary", k=n//2, bits=36)
-bkz = BKZReduction(copy.copy(A))
-bkz(BKZ.Param(block_size=block_size, max_loops=2, strategies=BKZ.DEFAULT_STRATEGY, flags=BKZ.MAX_LOOPS|BKZ.VERBOSE))
+float_type = "d"
 
-trace = bkz.trace
-print trace.report()
+A = IntegerMatrix.random(n, "qary", k=n//2, bits=40)
+A = LLL.reduction(A)
+params = BKZ.Param(block_size=block_size, max_loops=4, strategies=BKZ.DEFAULT_STRATEGY, flags=BKZ.MAX_LOOPS|BKZ.VERBOSE)
+bkz = BKZReduction(GSO.Mat(copy.copy(A), float_type=float_type))
+bkz(params)
 
+print bkz.trace
 print
 
-bkz = BKZ2(copy.copy(A))
-bkz(BKZ.Param(block_size=block_size, max_loops=2, strategies=BKZ.DEFAULT_STRATEGY, flags=BKZ.MAX_LOOPS|BKZ.VERBOSE))
+bkz2 = BKZ2(GSO.Mat(copy.copy(A), float_type=float_type))
+bkz2(params)
 
+print bkz2.trace
