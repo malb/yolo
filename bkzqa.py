@@ -6,10 +6,9 @@ BKZ 2.0 variant which ensures that the basis quality does not decrease.
 from fpylll.algorithms.bkz_stats import BKZTreeTracer, dummy_tracer
 import time
 import copy
-from fpylll.algorithms.bkz  import BKZReduction as BKZ1
 from fpylll.algorithms.bkz2 import BKZReduction as BKZ2
 from fpylll import BKZ, IntegerMatrix, Enumeration, EnumerationError, LLL, GSO
-from fpylll.util import gaussian_heuristic, set_random_seed
+from fpylll.util import adjust_radius_to_gh_bound, set_random_seed
 
 
 class BKZReduction(BKZ2):
@@ -133,7 +132,7 @@ class BKZReduction(BKZ2):
 
             if param.flags & BKZ.GH_BND and block_size > 30:
                 root_det = self.M.get_root_det(kappa, kappa + block_size)
-                radius, expo = gaussian_heuristic(radius, expo, block_size, root_det, param.gh_factor)
+                radius, expo = adjust_radius_to_gh_bound(radius, expo, block_size, root_det, param.gh_factor)
 
             pruning = self.get_pruning(kappa, block_size, param, tracer)
 
