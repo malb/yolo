@@ -1,9 +1,11 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 BKZ 2.0 variant which ensures that the basis quality does not decrease.
 """
 
 from fpylll.algorithms.bkz_stats import BKZTreeTracer, dummy_tracer
+import begin
 import time
 import copy
 from fpylll.algorithms.bkz2 import BKZReduction as BKZ2
@@ -96,12 +98,14 @@ class BKZReduction(BKZ2):
             block_size = min(params.block_size, max_row - kappa)
             self.svp_reduction(kappa, block_size, params, tracer, top_level=top_level)
 
+        with tracer.context("gso"):
+            self.M.update_gso() # TODO: we call this clean up, but we should be more clever about this
+
     def svp_preprocessing(self, kappa, block_size, param, tracer=dummy_tracer):
 
         with tracer.context("lll"):
             # run LLL between kappa and kappa + block_size
-            lll_obj = LLL.Reduction(self.M, eta=0.75)
-            lll_obj(kappa, kappa, kappa + block_size, kappa)
+            self.lll_obj(kappa, kappa, kappa + block_size, kappa)
 
         for preproc in param.strategies[block_size].preprocessing_block_sizes:
             prepar = param.__class__(block_size=preproc, strategies=param.strategies,
@@ -214,24 +218,24 @@ class BKZReduction(BKZ2):
             self.M.move_row(kappa + block_size, d)
             self.M.remove_last_row()
 
-        self.M.update_gso()
+@begin.start(auto_convert=True)
+def main(n=150, block_size=60, float_type="d", logq=40, verbose=False, seed=0xdeadbeef):
+    print "= n: %3d, β: %2d, bits: %3d, float_type: %s, seed: 0x%08x ="%(n, block_size, logq, float_type, seed)
+    print
+    set_random_seed(seed)
+    A = IntegerMatrix.random(n, "qary", k=n//2, bits=logq)
+    A = LLL.reduction(A)
 
+    params = BKZ.Param(block_size=block_size, max_loops=4, strategies=BKZ.DEFAULT_STRATEGY, flags=BKZ.MAX_LOOPS|BKZ.VERBOSE)
+    bkz = BKZReduction(GSO.Mat(copy.copy(A), float_type=float_type))
+    bkz(params)
 
-set_random_seed(1337)
-n = 120
-block_size = 60
-float_type = "d"
+    print bkz.trace
 
-A = IntegerMatrix.random(n, "qary", k=n//2, bits=40)
-A = LLL.reduction(A)
-params = BKZ.Param(block_size=block_size, max_loops=4, strategies=BKZ.DEFAULT_STRATEGY, flags=BKZ.MAX_LOOPS|BKZ.VERBOSE)
-bkz = BKZReduction(GSO.Mat(copy.copy(A), float_type=float_type))
-bkz(params)
+    bkz2 = BKZ2(GSO.Mat(copy.copy(A), float_type=float_type))
+    bkz2(params)
 
-print bkz.trace
-print
+    print bkz2.trace
 
-bkz2 = BKZ2(GSO.Mat(copy.copy(A), float_type=float_type))
-bkz2(params)
-
-print bkz2.trace
+    if verbose:
+        print bkz.trace.report()
