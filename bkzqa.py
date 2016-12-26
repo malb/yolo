@@ -104,8 +104,11 @@ class BKZReduction(BKZ2):
     def svp_preprocessing(self, kappa, block_size, param, tracer=dummy_tracer):
 
         with tracer.context("lll"):
+            # make sure everything is somewhat sane, TODO this has a cost, when to drop it?
+            self.lll_obj.size_reduction(kappa, kappa + block_size, kappa)
             # run LLL between kappa and kappa + block_size
-            self.lll_obj(kappa, kappa, kappa + block_size, kappa)
+            if self.M.get_current_slope(kappa, kappa + block_size) < -0.085:
+                self.lll_obj(kappa, kappa, kappa + block_size, kappa)
 
         for preproc in param.strategies[block_size].preprocessing_block_sizes:
             prepar = param.__class__(block_size=preproc, strategies=param.strategies,
@@ -238,4 +241,5 @@ def main(n=150, block_size=60, float_type="d", logq=40, verbose=False, seed=0xde
     print bkz2.trace
 
     if verbose:
+        print
         print bkz.trace.report()
