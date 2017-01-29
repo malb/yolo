@@ -47,11 +47,14 @@ class Tuner(object):
         
         minb = 10
         if len(preprocessing)==0:
+            #V.append(tuple([2]))
             V.append(tuple([minb]))
             # V.append(tuple([(self.b/3, .5)]))
             return V
         if len(preprocessing)==1:
             b = preprocessing[0]
+            if b==2:
+                V.append(tuple([minb]))             
             if b<minb+6:
                 V.append(tuple([]))
             for bb in reversed(range(max(b-2, minb), min(b+3, self.b - YOLO_GAP_PREPROC_BLOCK_SIZE))):
@@ -88,14 +91,14 @@ class Tuner(object):
     def enum(self, M, k, target_prob, preproc_time):
         b = self.b
 
-        radius = M.get_r(k, k) * .99
-        root_det = M.get_root_det(k, k + b - 1)
-        gh_radius, ge = gaussian_heuristic(radius, 0, b, root_det, 1.)
+        r = [M.get_r(i, i) for i in range(k, k + b)]
+        radius = r[0] * .99
+        gh_radius = gaussian_heuristic(r)
         if b > 30:
-            radius = min(radius, 1.21 * gh_radius * 2**ge)
+            radius = min(radius, 1.1 * gh_radius)
 
         if b < YOLO_PRUNER_MIN_BLOCK_SIZE:
-            return radius, self.strategy.get_pruning(radius, gh_radius * 2**ge)
+            return radius, self.strategy.get_pruning(radius, gh_radius)
 
         R = tuple([M.get_r(i, i) for i in range(k, k+b)])
         overhead = (preproc_time + RESTART_PENALTY) * NODE_PER_SEC
@@ -103,7 +106,7 @@ class Tuner(object):
         pruning = prune(radius, overhead, target_prob, [R], 
                         descent_method="gradient", precision=53, start_from=start_from)
         self.last_prunings = pruning.coefficients
-        self.proba = (self.proba * YOLO_MEMORY_LENGTH) + pruning.probability
+        self.proba = (self.proba * YOLO_MEMORY_LENGTH) + pruning.expectation
         self.proba /= YOLO_MEMORY_LENGTH + 1
         return radius, pruning
 
@@ -114,7 +117,7 @@ class Tuner(object):
         if pruning is None:
             efficiency = 1. / time
         else:
-            efficiency = pruning.probability / time
+            efficiency = pruning.expectation / time
         if preprocessing in self.data:
             x = self.data[preprocessing]
             c = self.counts[preprocessing]
@@ -176,9 +179,11 @@ class YoloBKZ(object):
         begin = k
         end = k + b
         with self.tracer.context("lll"):
-            self.lll_obj(k, k, k+b)        
+            self.lll_obj.size_reduction(k, k + b, k)
+            self.lll_obj(k, k, k+b)
         for preproc_b in preprocessing:
-            self.tour(preproc_b, .5, begin, end)
+            if preproc_b>2:
+                self.tour(preproc_b, .5, begin, end)
 
     def filter_hints(self, hints):
         return [v for v in hints if sum([x*x for x in v]) > 1.5]      
@@ -273,7 +278,7 @@ class YoloBKZ(object):
                 with self.tracer.context("enumeration", enum_obj=enum_obj, probability=1.):
                     solutions = enum_obj.enumerate(k, k + b, radius, 0)
             else:
-                with self.tracer.context("enumeration", enum_obj=enum_obj, probability=pruning.probability):
+                with self.tracer.context("enumeration", enum_obj=enum_obj, probability=pruning.expectation):
                     solutions = enum_obj.enumerate(k, k + b, radius, 0, pruning=pruning.coefficients)
             return [sol for (sol, _) in solutions[0:]]
         except EnumerationError:
@@ -288,9 +293,9 @@ class YoloBKZ(object):
         while rem_prob > 1. - target_prob:
             tmp_target_prob =  1.01 * (target_prob - 1)/rem_prob + 1.01            
 
-            if inserted == 0:
-                with self.tracer.context("randomize"):
-                    self.randomize(k+1, k+b)
+            # if inserted == 0:
+            #     with self.tracer.context("randomize"):
+            #         self.randomize(k+1, k+b)
 
             with self.tracer.context("preprocessing"):
                 preprocessing = self.tuners[b].preprocess()
@@ -300,7 +305,7 @@ class YoloBKZ(object):
                 radius, pruning = self.tuners[b].enum(M, k, tmp_target_prob, timer.elapsed())
             solutions = self.enum(k, b, radius, pruning)
             solution = solutions[0]
-            if solution == None:
+            if solution is None:
                 hints = []
             else:
                 hints = solutions[1:]
@@ -308,7 +313,7 @@ class YoloBKZ(object):
             if pruning is None:
                 rem_prob = 0
             else:
-                rem_prob *= (1 - pruning.probability)
+                rem_prob *= (1 - pruning.expectation)
 
             # radius, pruning = self.tuner.enum_for_hints(M, k, b, timer.elapsed())
             # if radius>0:
@@ -340,12 +345,12 @@ class YoloBKZ(object):
         # self.tracer.exit()
 
 
-# n = 160
-# b = 45
-# A = IntegerMatrix.random(n, "qary", k=n//2, bits=30)
-# yBKZ = YoloBKZ(A)
+n = 160
+b = 40
+A = IntegerMatrix.random(n, "qary", k=n//2, bits=30)
+yBKZ = YoloBKZ(A)
 
-# t = time()
-# yBKZ(b)
-# t = time() - t
-# print "  time: %.2fs"%(t,)
+t = time()
+yBKZ(b)
+t = time() - t
+print "  time: %.2fs"%(t,)

@@ -13,14 +13,15 @@ from fpylll.algorithms.bkz_stats import dummy_tracer
 from math import ceil
 import time
 
-YOLO_PREPROC_MIN_BLOCK_SIZE = 50
+YOLO_PREPROC_MIN_BLOCK_SIZE = 30
 YOLO_PRUNER_MIN_BLOCK_SIZE = 50
+YOLO_GHBOUND_MIN_BLOCK_SIZE = 30
 YOLO_GAP_PREPROC_BLOCK_SIZE = 5
 YOLO_MAX_BLOCK_SIZE = 200
 YOLO_MEMORY_LENGTH = 10
 GH_FACTOR = 1.1
 NODE_PER_SEC = 2**26
-RETRY_PENALTY = 0.01
+RETRY_PENALTY = 0.005
 
 
 class BKZ3Param():
@@ -56,6 +57,7 @@ class BKZ3Param():
         :param dump_gso_filename: if this is not ``None`` then the logs of the norms of the
             Gram-Schmidt vectors are written to this file after each BKZ loop.
         """
+        print min_success_probability
         self.bkz_param = BKZ.Param(block_size, strategies,
                                    delta, flags,
                                    max_loops, max_time,
@@ -68,6 +70,8 @@ class BKZ3Param():
         self.nr_hints = 0.5   # Relative to block_size. For enumerating more than the SVP to do multiple insertions
         self.hints_bound = 1  # Keep the solution whose norm are <= hints_bound * norm(SVP)
         self.rampup = False   # Activate or not a progressive-BKZ to begin
+
+        print self.bkz_param.min_success_probability
 
     def set_lll_eta(self, eta):
         self.lll_eta = eta
@@ -92,7 +96,7 @@ def strength_to_preprocessing(s):
     L = []
     s = max(0, s)
     # print "A", s, range(s, 0, -5)
-    for ps in range(s, 10, -5):
+    for ps in range(s, -1, -5):
         if ps < 20:
             L += [("LLL", ps)] 
         else:
@@ -127,24 +131,28 @@ class Tuner(object):
         if best_i<0:
             return False
 
+        for x in self.tuners[best_i].data.keys():
+            if self.tuners[best_i].counts[x] > 1:
+                self.data[x] = self.tuners[best_i].data[x]
+                self.counts[x] = 1
+
         x = max(self.tuners[best_i].data, key=self.tuners[best_i].data.get)
         self.data[x] = self.tuners[best_i].data[x]
-        self.counts[x] = 1
+        self.counts[x] = 2
 
-        # for x in self.tuners[best_i].data.keys():
-        #     if self.tuners[best_i].counts[x] > 1:
-        #         self.data[x] = self.tuners[best_i].data[x]
-        #         self.counts[x] = 1 + self.tuners[best_i].counts[x]/10
         return True
 
     def get_preprocessing_strength(self):
+        if self.block_size < YOLO_PREPROC_MIN_BLOCK_SIZE:
+            return 0
+
         if len(self.data) == 0:
             self.copy_data_form_closest_tuners()
 
         if len(self.data) == 0:
-            return 10
+            return 0
 
-        best = max(self.data, key=self.data.get)
+        best = min(self.data, key=self.data.get)
         best_efficiency = self.data[best]
         variations = self.get_variations(best)
         for variation in variations:
@@ -168,7 +176,7 @@ class Tuner(object):
         r = tuple([M.get_r(i, i) for i in range(kappa, kappa+block_size)])
         radius = r[0] * .99
         gh_radius = gaussian_heuristic(r)
-        if block_size > 30:
+        if block_size > YOLO_GHBOUND_MIN_BLOCK_SIZE:
             radius = min(radius, 1.21 * gh_radius)
 
         if block_size < YOLO_PRUNER_MIN_BLOCK_SIZE:
@@ -189,7 +197,7 @@ class Tuner(object):
         self.proba = (self.proba * YOLO_MEMORY_LENGTH) + pruning.expectation
         self.proba /= YOLO_MEMORY_LENGTH + 1
 
-        efficiency = 1. / time
+        efficiency = time
 
         if preprocessing in self.data:
             x = self.data[preprocessing]
@@ -207,6 +215,12 @@ class Tuner(object):
 
 # class Tuners(object):
 #     def __init__(self, block_size):
+
+
+etas = [.95, .90, .85, .80, .75, 
+        .70, .65, .62, .59, .58,
+        .57, .56, .55, .54, .53,
+        .52, .51, .505, .503, .501]
 
 
 class BKZReduction(BKZ2):
@@ -240,7 +254,7 @@ class BKZReduction(BKZ2):
 
         self.lll_objs = 20*[None]
         for i in range(20):
-            eta = .51 + (19-i)/100.
+            eta = etas[i]
             self.lll_objs[i] = LLL.Reduction(self.M, flags=LLL.DEFAULT, eta=eta)
 
         cputime_start = time.clock()
@@ -306,19 +320,20 @@ class BKZReduction(BKZ2):
             print ("s \t| cnt \t| eff \t")
             print "-------------------------"
             for x in tuner.data:
-                print ("%d \t| %d \t| %.2f \t"%(x, tuner.counts[x], tuner.data[x]))
+                print ("%d \t| %d \t| %.4f "%(x, tuner.counts[x], tuner.data[x]))
+
             print "-------------------------"
 
         return clean
 
-    def preprocessing(self, block_size_max, min_row, max_row, start=0, step=10, tracer=dummy_tracer):
+    def preprocessing(self, block_size_max, min_row, max_row, start=0, step=1, tracer=dummy_tracer):
         block_sizes = range(start, block_size_max, step)
         # block_sizes.append(block_size_max-5)
         print "Ramp up with blocksizes:" + str(block_sizes)
         self.ith_tour = -len(block_sizes)
         total_timer = Timer()
         for i in block_sizes:
-            p = self.params.bkz_param.__class__(block_size=i, strategies=self.params.bkz_param.strategies, flags=self.params.bkz_param.flags)
+            p = self.params.bkz_param.__class__(block_size=i, min_success_probability=.5, strategies=self.params.bkz_param.strategies, flags=self.params.bkz_param.flags)
             with tracer.context("tour", self.ith_tour):
                 self.tour(p, min_row, max_row, tracer=tracer)
             slope = self.M.get_current_slope(0, self.A.nrows)
@@ -364,7 +379,10 @@ class BKZReduction(BKZ2):
 
         :returns: ``True`` if no change was made and ``False`` otherwise
         """
-        
+
+        total_timer = Timer()
+        timer = Timer()        
+        self.lll_objs[0].size_reduction(kappa, kappa+block_size, 0)
         rem_prob, inserted = 1.0, 1
         target_prob = params.min_success_probability
 
@@ -376,22 +394,24 @@ class BKZReduction(BKZ2):
         if (block_size == 60):
             self.ith_block += 1
 
-        total_timer = Timer()
-        timer = Timer()
         extra_strength = 0
+        strength = self.tuners[block_size].get_preprocessing_strength()
 
         while rem_prob > 1. - target_prob:
             tmp_target_prob = 1.01 * (target_prob - 1)/rem_prob + 1.01
 
-            strength = self.tuners[block_size].get_preprocessing_strength()
             if inserted == 0:
+                if strength + extra_strength < 20:
+                    extra_strength = 20 - strength
                 extra_strength += 2
-                # with tracer.context("randomize"):
-                #    self.randomize_block(kappa+1, kappa+block_size)
+                if strength + extra_strength > block_size - 10:
+                    extra_strength = 0
+                    with tracer.context("randomize"):
+                        print >> stderr, "RERAND", block_size, kappa, strength
+                        self.randomize_block(kappa+1, kappa+block_size)
 
             with tracer.context("preprocessing"):              
                 # if len(preprocessing) > 0 and block_size == 60:
-                #     print >> stderr, self.ith_tour, self.ith_block, block_size, preprocessing
                 self.svp_preprocessing(kappa, block_size, params, strength + extra_strength, tracer)
 
             with tracer.context("pruner"):
@@ -412,19 +432,19 @@ class BKZReduction(BKZ2):
             else:
                 rem_prob *= (1 - pruning.expectation)
 
-            self.tuners[block_size].feedback(strength + extra_strength, pruning, timer.elapsed() / pruning.expectation)
+            # self.tuners[block_size].feedback(strength + extra_strength, pruning, timer.elapsed() / pruning.expectation)
             timer.reset()
             with tracer.context("postprocessing"):
                 inserted = self.svp_postprocessing(kappa, block_size, solution, hints, tracer, top_level=top_level)
 
-        # self.tuners[block_size].feedback(strength, pruning, total_timer.elapsed())
+        self.tuners[block_size].feedback(strength, pruning, total_timer.elapsed())
         return True
 
     def svp_preprocessing(self, kappa, block_size, param, strength=None, tracer=dummy_tracer):
         clean = True
 
         # TODO validate, size_reduction seems needed
-        self.lll_objs[19].size_reduction(kappa, kappa + block_size, kappa)
+        # self.lll_objs[0].size_reduction(kappa, kappa + block_size, 0)
 
         for (alg, val) in strength_to_preprocessing(strength):
             if alg == "LLL":
@@ -468,7 +488,7 @@ class BKZReduction(BKZ2):
 
                 M.move_row(kappa + first_nonzero_vector, kappa)
                 with tracer.context("lll"):
-                    self.lll_objs[0].size_reduction(kappa, kappa + first_nonzero_vector + 1)
+                    self.lll_objs[0].size_reduction(kappa, kappa + block_size, 0)
                     # self.lll_obj.size_reduction(lll_min, kappa + first_nonzero_vector + 1)
                     # self.lll_obj(lll_min, kappa, kappa + 1, lll_min)
                 return 1
@@ -496,6 +516,8 @@ class BKZReduction(BKZ2):
         for i in range(l):
             M.move_row(kappa+block_size, M.d-1)
             M.remove_last_row()
+        with tracer.context("lll"):
+            self.lll_objs[0].size_reduction(kappa, kappa + block_size, 0)
 
         return l
 
